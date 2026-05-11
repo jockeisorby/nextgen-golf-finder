@@ -1,0 +1,19 @@
+<svg width="960" height="540" viewBox="0 0 960 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="540" fill="#F9F9F9"/>
+  <rect width="960" height="540" fill="url(#sky)"/>
+  <path d="M0 400C180 302 300 326 482 384C642 435 774 397 960 306V540H0V400Z" fill="#046294"/>
+  <path d="M0 438C192 334 316 363 492 413C662 461 802 422 960 345V540H0V438Z" fill="#0A6F55"/>
+  <path d="M262 540C323 413 401 345 510 323C620 301 732 352 843 540H262Z" fill="#C1F100"/>
+  <path d="M333 540C383 432 443 372 527 356C607 340 688 389 772 540H333Z" fill="#E8FF78"/>
+  <path d="M478 335L482 246" stroke="#1A1C1C" stroke-width="4" stroke-linecap="round"/>
+  <path d="M483 247C518 239 550 249 579 278C542 287 512 276 483 247Z" fill="#004971"/>
+  <circle cx="478" cy="335" r="13" fill="#FFFFFF"/>
+  <circle cx="478" cy="335" r="5" fill="#DADADA"/>
+  <defs>
+    <linearGradient id="sky" x1="480" y1="0" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CCE5FF"/>
+      <stop offset="0.45" stop-color="#F9F9F9"/>
+      <stop offset="1" stop-color="#E8E8E8"/>
+    </linearGradient>
+  </defs>
+</svg>
