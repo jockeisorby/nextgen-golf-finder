@@ -20,6 +20,12 @@ import type {
   SearchFilters,
   SearchOverview,
 } from "@/lib/min-golf/types";
+import {
+  SEARCH_TERM_CHIPS,
+  submitQueryAsTerms,
+  toggleSearchTerm,
+  uniqueSearchTerms,
+} from "@/lib/search-terms";
 
 import { ActiveFilterChips } from "./ActiveFilterChips";
 import { AppShell } from "./AppShell";
@@ -33,6 +39,16 @@ const JUNIOR_CLASSIFICATION = "Handicaptävlingar - Juniortävlingar";
 
 const HOME_HERO_IMAGE =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAr9av44Ft5c_FUfIhjZVUxLK6oPJHHWSgGTeDQhFIeamHXcpFJaUNYRAF2n6SEjiYV2mVsspxg8w1VrRWk8B8y0_ot7VmsrrDiUW8LVxwTukXLI-wFkDFKIWfERYTImy3dH3DG1mPC_FQwSd_N5_n68gbu6w4XdxOBmasHeC7U8G1jT7c9UbeQfLD2SNgOAaVE3jrUaVJwJ7k32MPHZxh8WWdsZ_DiC55vh_ayorXSZJFhtP5picUOS9p1rd2hyVOSdQMveXTgc9s";
+const PREFERRED_DISTRICT_STORAGE_KEY = "tavla-golf:preferred-district";
+
+function readPreferredDistrictId() {
+  if (typeof window === "undefined") return undefined;
+  return window.localStorage.getItem(PREFERRED_DISTRICT_STORAGE_KEY) ?? undefined;
+}
+
+function writePreferredDistrictId(id: string) {
+  window.localStorage.setItem(PREFERRED_DISTRICT_STORAGE_KEY, id);
+}
 
 function clubDisplayName(club: ClubOption) {
   return club.name
@@ -49,6 +65,7 @@ function normalizeFilters(filters: SearchFilters): SearchFilters {
   const defaults = defaultDateRange();
   return {
     query: filters.query?.trim() || undefined,
+    terms: uniqueSearchTerms(filters.terms ?? []),
     from: filters.from || defaults.from,
     to: filters.to || defaults.to,
     onlyWeekend: Boolean(filters.onlyWeekend),
@@ -65,8 +82,14 @@ function normalizeFilters(filters: SearchFilters): SearchFilters {
 
 function filtersFromParams(searchParams: URLSearchParams): SearchFilters {
   const defaults = defaultDateRange();
+  const queryParam = searchParams.get("q") ?? undefined;
   return normalizeFilters({
-    query: searchParams.get("q") ?? undefined,
+    query: undefined,
+    terms: [
+      ...listParam(searchParams, "terms"),
+      ...listParam(searchParams, "term"),
+      ...(queryParam ? [queryParam] : []),
+    ],
     from: searchParams.get("from") ?? defaults.from,
     to: searchParams.get("to") ?? defaults.to,
     onlyWeekend: searchParams.get("weekend") === "1",
@@ -85,6 +108,7 @@ function filtersToParams(filters: SearchFilters) {
   const normalized = normalizeFilters(filters);
   const params = new URLSearchParams();
   if (normalized.query) params.set("q", normalized.query);
+  if (normalized.terms?.length) params.set("terms", normalized.terms.join(","));
   if (normalized.from) params.set("from", normalized.from);
   if (normalized.to) params.set("to", normalized.to);
   if (normalized.onlyWeekend) params.set("weekend", "1");
@@ -125,6 +149,7 @@ export function HomePage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [locationMessage, setLocationMessage] = useState<string>();
+  const [preferredDistrictId, setPreferredDistrictId] = useState<string>();
   const draftFilters =
     draftState.key === searchKey ? draftState.filters : activeFilters;
   const setDraftFilters = useCallback(
@@ -224,6 +249,36 @@ export function HomePage() {
     [pathname, router],
   );
 
+  const withPreferredDistrict = useCallback(
+    (filters: SearchFilters) => {
+      const hasLocationFilter = Boolean(
+        filters.districtId || filters.clubIds?.length,
+      );
+      const defaultDistrictId = preferredDistrictId ?? readPreferredDistrictId();
+      if (hasLocationFilter || !defaultDistrictId) return filters;
+      return { ...filters, districtId: defaultDistrictId };
+    },
+    [preferredDistrictId],
+  );
+
+  const rememberPreferredDistrict = useCallback((filters: SearchFilters) => {
+    if (filters.districtId) {
+      writePreferredDistrictId(filters.districtId);
+      setPreferredDistrictId(filters.districtId);
+    }
+
+    return filters;
+  }, []);
+
+  const submitSearch = useCallback(
+    (filters: SearchFilters) => {
+      updateUrl(
+        rememberPreferredDistrict(withPreferredDistrict(submitQueryAsTerms(filters))),
+      );
+    },
+    [rememberPreferredDistrict, updateUrl, withPreferredDistrict],
+  );
+
   const resetFilters = useCallback(() => {
     const defaults = normalizeFilters({});
     setDraftFilters(defaults);
@@ -235,13 +290,32 @@ export function HomePage() {
   const runNearbySearch = useCallback(() => {
     setLocationMessage(undefined);
 
+    const savedDistrictId = preferredDistrictId ?? readPreferredDistrictId();
+    if (savedDistrictId) {
+      const savedDistrictName =
+        overview?.districts.find((district) => district.id === savedDistrictId)
+          ?.name ?? "din region";
+
+      setLocationMessage(`Söker i ${savedDistrictName}.`);
+      updateUrl({
+        ...activeFilters,
+        query: undefined,
+        districtId: savedDistrictId,
+        clubIds: [],
+      });
+      return;
+    }
+
     if (!overview) {
       setLocationMessage("Filterdata laddas fortfarande. Försök igen strax.");
       return;
     }
 
     if (!navigator.geolocation) {
-      setLocationMessage("Din webbläsare stödjer inte platsdelning.");
+      setLocationMessage(
+        "Din webbläsare stödjer inte platsdelning. Välj distrikt i filtret; valet sparas som Min region.",
+      );
+      setIsFilterOpen(true);
       return;
     }
 
@@ -265,6 +339,8 @@ export function HomePage() {
         setLocationMessage(
           `Söker i ${nearest.district.name}, ungefär ${Math.round(nearest.distanceKm)} km från distriktets mittpunkt.`,
         );
+        writePreferredDistrictId(nearest.district.id);
+        setPreferredDistrictId(nearest.district.id);
         updateUrl({
           ...activeFilters,
           query: undefined,
@@ -274,12 +350,13 @@ export function HomePage() {
       },
       () => {
         setLocationMessage(
-          "Platsdelning nekades. Välj distrikt eller klubb i filtret istället.",
+          "Platsdelning nekades. Välj distrikt i filtret; valet sparas som Min region.",
         );
+        setIsFilterOpen(true);
       },
       { enableHighAccuracy: false, maximumAge: 3_600_000, timeout: 8_000 },
     );
-  }, [activeFilters, overview, updateUrl]);
+  }, [activeFilters, overview, preferredDistrictId, updateUrl]);
 
   const quickChips = useMemo(() => {
     const weekend = upcomingWeekendRange();
@@ -288,7 +365,6 @@ export function HomePage() {
         label: "Denna helg",
         value: { ...activeFilters, ...weekend, onlyWeekend: true },
       },
-      { label: "Scramble", value: { ...activeFilters, query: "scramble" } },
       {
         label: "Senior",
         value: { ...activeFilters, classification: SENIOR_CLASSIFICATION },
@@ -319,9 +395,30 @@ export function HomePage() {
         .slice(0, 8) ?? [])
     : [];
 
-  const runPopularSearch = useCallback(
-    (query: string) => updateUrl({ ...activeFilters, query }),
-    [activeFilters, updateUrl],
+  const toggleTermFilter = useCallback(
+    (term: string) => {
+      updateUrl(
+        withPreferredDistrict({
+          ...activeFilters,
+          query: undefined,
+          terms: toggleSearchTerm(activeFilters.terms, term),
+        }),
+      );
+    },
+    [activeFilters, updateUrl, withPreferredDistrict],
+  );
+
+  const addTermsFilter = useCallback(
+    (terms: string[]) => {
+      updateUrl(
+        withPreferredDistrict({
+          ...activeFilters,
+          query: undefined,
+          terms: uniqueSearchTerms([...(activeFilters.terms ?? []), ...terms]),
+        }),
+      );
+    },
+    [activeFilters, updateUrl, withPreferredDistrict],
   );
 
   return (
@@ -347,7 +444,7 @@ export function HomePage() {
               className="gf-home-search"
               onSubmit={(event) => {
                 event.preventDefault();
-                updateUrl(draftFilters);
+                submitSearch(draftFilters);
               }}
             >
               <label className="sr-only" htmlFor="competition-search">
@@ -384,8 +481,22 @@ export function HomePage() {
                 onClick={runNearbySearch}
               >
                 <Navigation className="size-[18px]" aria-hidden="true" />
-                Tävlingar i närheten
+                Min region
               </button>
+              {SEARCH_TERM_CHIPS.slice(0, 5).map((chip) => {
+                const isSelected = activeFilters.terms?.includes(chip.term);
+                return (
+                  <button
+                    key={chip.term}
+                    type="button"
+                    className={`gf-home-chip ${isSelected ? "gf-home-chip-selected" : ""}`}
+                    aria-pressed={Boolean(isSelected)}
+                    onClick={() => toggleTermFilter(chip.term)}
+                  >
+                    {chip.label}
+                  </button>
+                );
+              })}
               <button
                 type="button"
                 className="gf-home-chip"
@@ -401,7 +512,7 @@ export function HomePage() {
               <button
                 type="button"
                 className="gf-home-chip"
-                onClick={() => runPopularSearch("lagspel")}
+                onClick={() => addTermsFilter(["lag"])}
               >
                 Lagspel
               </button>
@@ -436,14 +547,14 @@ export function HomePage() {
                 <span className="gf-home-feature-tag">LIVE NU</span>
                 <h2 className="gf-home-feature-title">Visby GK Invitational</h2>
                 <p className="gf-home-feature-text">
-                  Se aktuella tävlingar på Gotland och hitta nästa start.
+                  Lokala tävlingar med rätt upplägg från start.
                 </p>
                 <button
                   type="button"
                   className="gf-home-feature-button"
-                  onClick={() => runPopularSearch("Visby")}
+                  onClick={runNearbySearch}
                 >
-                  Visa detaljer
+                  Sök i min region
                 </button>
               </div>
             </article>
@@ -455,31 +566,37 @@ export function HomePage() {
                     <Users className="size-8 text-secondary" aria-hidden="true" />
                     <span>48 öppna starter</span>
                   </div>
-                  <h3 className="gf-home-mini-title">Morgonpigga?</h3>
+                  <h3 className="gf-home-mini-title">Poängbogey</h3>
                   <p className="gf-home-mini-text">
-                    Hitta tävlingar och rundor med tidiga starter.
+                    Vanlig tävlingsform som fungerar bra i sociala rundor.
                   </p>
                 </div>
                 <button
                   type="button"
                   className="gf-home-mini-button"
-                  onClick={() => runPopularSearch("morgon")}
+                  onClick={() => toggleTermFilter("poängbogey")}
                 >
-                  Visa tidiga starter
+                  Filtrera poängbogey
                 </button>
               </article>
 
               <article className="gf-home-ranking-card">
                 <div>
                   <Medal className="mb-2 size-8" aria-hidden="true" />
-                  <h3 className="gf-home-mini-title">Öppen anmälan</h3>
+                  <h3 className="gf-home-mini-title">Scramble & lag</h3>
                   <p className="gf-home-mini-text">
-                    Prioritera tävlingar där anmälan fortfarande är aktiv.
+                    Hitta tävlingar där laget och upplägget är viktigare.
                   </p>
                 </div>
                 <div className="gf-home-ranking-footer">
-                  <span className="gf-home-rank-badge">Nu</span>
-                  <span>Filtrera fram öppna tävlingar</span>
+                  <span className="gf-home-rank-badge">Lag</span>
+                  <button
+                    type="button"
+                    className="gf-home-ranking-link"
+                    onClick={() => addTermsFilter(["scramble", "lag"])}
+                  >
+                    Filtrera scramble
+                  </button>
                 </div>
               </article>
             </div>
@@ -490,21 +607,19 @@ export function HomePage() {
               Populärt just nu
             </h2>
             <div className="gf-home-trending-grid">
-              {["Scramble Match", "Ullna GC", "Hcp-justering", "Bro Hof Slott"].map(
-                (label) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className="gf-home-trending-item"
-                    onClick={() => runPopularSearch(label)}
-                  >
-                    <span className="gf-home-trending-icon">
-                      <History className="size-5" aria-hidden="true" />
-                    </span>
-                    <span>{label}</span>
-                  </button>
-                ),
-              )}
+              {SEARCH_TERM_CHIPS.slice(0, 4).map((chip) => (
+                <button
+                  key={chip.term}
+                  type="button"
+                  className="gf-home-trending-item"
+                  onClick={() => toggleTermFilter(chip.term)}
+                >
+                  <span className="gf-home-trending-icon">
+                    <History className="size-5" aria-hidden="true" />
+                  </span>
+                  <span>{chip.label}</span>
+                </button>
+              ))}
             </div>
           </section>
         </div>
@@ -520,7 +635,7 @@ export function HomePage() {
             isLoading={isLoading}
             onChange={setDraftFilters}
             onOpenFilters={() => setIsFilterOpen(true)}
-            onSubmit={() => updateUrl(draftFilters)}
+            onSubmit={() => submitSearch(draftFilters)}
           />
 
           <section
@@ -536,11 +651,28 @@ export function HomePage() {
             </button>
             <button
               type="button"
-              className="gf-chip gf-chip-nearby"
+              className={`gf-chip gf-chip-nearby ${
+                activeFilters.districtId ? "gf-chip-selected" : ""
+              }`}
               onClick={runNearbySearch}
+              aria-pressed={Boolean(activeFilters.districtId)}
             >
-              Nära mig
+              Min region
             </button>
+            {SEARCH_TERM_CHIPS.map((chip) => {
+              const isSelected = activeFilters.terms?.includes(chip.term);
+              return (
+                <button
+                  key={chip.term}
+                  type="button"
+                  className={`gf-chip ${isSelected ? "gf-chip-selected" : ""}`}
+                  onClick={() => toggleTermFilter(chip.term)}
+                  aria-pressed={Boolean(isSelected)}
+                >
+                  {chip.label}
+                </button>
+              );
+            })}
             {quickChips.map((chip) => (
               <button
                 key={chip.label}
@@ -557,11 +689,16 @@ export function HomePage() {
             <ActiveFilterChips
               filters={activeFilters}
               overview={overview}
-              onRemove={(key) => {
+              onRemove={(key, value) => {
                 const next = {
                   ...activeFilters,
                   [key]: key === "onlyWeekend" ? false : undefined,
                 };
+                if (key === "terms") {
+                  next.terms = (activeFilters.terms ?? []).filter(
+                    (term) => term !== value,
+                  );
+                }
                 if (
                   key === "clubIds" ||
                   key === "gameType" ||
@@ -605,11 +742,13 @@ export function HomePage() {
                     type="button"
                     className="gf-local-club-chip"
                     onClick={() =>
-                      updateUrl({
-                        ...activeFilters,
-                        districtId: selectedDistrict.id,
-                        clubIds: [club.id],
-                      })
+                      updateUrl(
+                        rememberPreferredDistrict({
+                          ...activeFilters,
+                          districtId: selectedDistrict.id,
+                          clubIds: [club.id],
+                        }),
+                      )
                     }
                   >
                     {clubDisplayName(club)}
@@ -654,7 +793,7 @@ export function HomePage() {
         overview={overview}
         onApply={() => {
           setIsFilterOpen(false);
-          updateUrl(draftFilters);
+          submitSearch(draftFilters);
         }}
         onChange={setDraftFilters}
         onClose={() => setIsFilterOpen(false)}

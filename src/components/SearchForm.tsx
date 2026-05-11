@@ -32,7 +32,7 @@ export function SearchForm({
             onChange={(event) =>
               onChange({ ...filters, query: event.target.value, page: 1 })
             }
-            placeholder="Klubb, ort eller tävlingsnamn"
+            placeholder="Klubb, ort eller spelform"
             className="gf-input"
           />
         </label>

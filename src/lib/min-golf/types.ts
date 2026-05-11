@@ -6,6 +6,7 @@ export type OtherOptionGroup =
 
 export type SearchFilters = {
   query?: string;
+  terms?: string[];
   from?: string;
   to?: string;
   onlyWeekend?: boolean;

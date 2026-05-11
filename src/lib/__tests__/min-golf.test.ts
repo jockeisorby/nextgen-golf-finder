@@ -169,6 +169,7 @@ describe("Min Golf payloads and normalizers", () => {
   it("trims search text and keeps selected filters", () => {
     const payload = buildMinGolfSearchPayload({
       query: " gotland ",
+      terms: ["scramble", "poängbogey", "scramble"],
       onlyWeekend: true,
       clubIds: ["", "101"],
       districtId: "20",
@@ -287,6 +288,34 @@ describe("Min Golf payloads and normalizers", () => {
       otherOptions: Record<string, unknown[]>;
     };
     expect(requestBody.otherOptions.gameComposition).toHaveLength(3);
+  });
+
+  it("filters known app terms against competition detail data", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL | Request, init?: RequestInit) => {
+        const requestUrl = String(url);
+        if (requestUrl.endsWith("/Competitions/Search")) {
+          const requestBody = JSON.parse(String(init?.body)) as {
+            searchPhrase: string;
+          };
+          expect(requestBody.searchPhrase).toBe("");
+          return jsonResponse(searchFixture);
+        }
+
+        if (requestUrl.endsWith("/Competitions/5637131")) {
+          return jsonResponse(detailFixture);
+        }
+
+        return jsonResponse({ error: true }, 404);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await searchCompetitions({ terms: ["poängbogey"] });
+
+    expect(result.competitions).toHaveLength(1);
+    expect(result.competitions[0].name).toBe("Gotland Open");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 

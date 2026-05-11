@@ -413,6 +413,12 @@ textarea {
   color: var(--on-primary);
 }
 
+.gf-chip-selected {
+  background: var(--secondary-fixed);
+  color: var(--on-secondary-fixed);
+  box-shadow: 0 6px 18px rgb(var(--shadow-tint) / 12%);
+}
+
 .gf-chip-nearby {
   border: 1px solid rgb(0 73 113 / 18%);
   background: var(--primary-fixed);
@@ -644,6 +650,12 @@ textarea {
   color: var(--on-surface-variant);
 }
 
+.gf-home-chip-selected {
+  background: var(--secondary-fixed);
+  color: var(--on-secondary-fixed);
+  box-shadow: 0 6px 18px rgb(var(--shadow-tint) / 12%);
+}
+
 .gf-home-chip:hover,
 .gf-home-chip-primary:hover {
   opacity: 0.9;
@@ -690,7 +702,7 @@ textarea {
 .gf-home-feature-content {
   position: absolute;
   inset: auto 0 0;
-  padding: 1.5rem 1.5rem 13rem;
+  padding: 1.5rem 1.5rem 15rem;
   color: var(--on-primary);
 }
 
@@ -834,6 +846,23 @@ textarea {
   font-size: 0.875rem;
   font-weight: 700;
   line-height: 1.25rem;
+}
+
+.gf-home-ranking-link {
+  border-radius: var(--radius-full);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  transition:
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.gf-home-ranking-link:hover {
+  background: rgb(255 255 255 / 12%);
+}
+
+.gf-home-ranking-link:active {
+  transform: scale(0.97);
 }
 
 .gf-home-rank-badge {

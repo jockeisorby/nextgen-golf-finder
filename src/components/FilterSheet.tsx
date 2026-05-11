@@ -145,9 +145,9 @@ export function FilterSheet({
               className="h-12 w-full rounded-lg border border-outline-variant bg-white px-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Alla kategorier</option>
-              {overview?.classifications.map((classification) => (
+              {overview?.classifications.map((classification, index) => (
                 <option
-                  key={classification.fullName}
+                  key={`${classification.fullName}-${index}`}
                   value={classification.fullName}
                 >
                   {classification.fullName}

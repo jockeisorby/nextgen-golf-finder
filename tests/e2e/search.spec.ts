@@ -95,8 +95,10 @@ test.beforeEach(async ({ page }) => {
     const payload = JSON.parse(route.request().postData() ?? "{}") as {
       query?: string;
       searchPhrase?: string;
+      terms?: string[];
     };
-    const searchPhrase = payload.query ?? payload.searchPhrase;
+    const searchPhrase =
+      payload.query ?? payload.searchPhrase ?? payload.terms?.join(" ");
     await route.fulfill({
       json:
         searchPhrase === "empty"
@@ -119,7 +121,7 @@ test("searches competitions and opens the detail view", async ({ page }) => {
   await page.goto("/");
 
   await page.getByLabel("Sökord").fill("gotland");
-  await page.getByRole("button", { name: "Sök" }).click();
+  await page.getByRole("button", { name: "Sök", exact: true }).click();
 
   await expect(page.getByRole("link", { name: "Gotland Open" })).toBeVisible();
   await page.getByRole("link", { name: "Gotland Open" }).click();
@@ -196,10 +198,59 @@ test("uses browser location to search nearby competitions", async ({
   await context.setGeolocation({ latitude: 57.64, longitude: 18.29 });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Tävlingar i närheten" }).click();
+  await page.getByRole("button", { name: "Min region" }).first().click();
 
   await expect(page).toHaveURL(/district=20/);
   await expect(page.getByText(/Söker i Gotland/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Visby GK" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Gotland Open" })).toBeVisible();
+});
+
+test("falls back to district selection when location is denied", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const denied = {
+      code: 1,
+      message: "denied",
+      PERMISSION_DENIED: 1,
+      POSITION_UNAVAILABLE: 2,
+      TIMEOUT: 3,
+    };
+
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: (
+          _success: unknown,
+          error?: (positionError: unknown) => void,
+        ) => error?.(denied),
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Min region" }).first().click();
+
+  await expect(page.getByText(/Platsdelning nekades/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Filter" })).toBeVisible();
+
+  await page.getByLabel("Distrikt").selectOption("20");
+  await page.getByRole("button", { name: "Visa resultat" }).click();
+
+  await expect(page).toHaveURL(/district=20/);
+  await expect(page.getByRole("link", { name: "Gotland Open" })).toBeVisible();
+});
+
+test("toggles game format chips as search filters", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Scramble" }).first().click();
+
+  await expect(page).toHaveURL(/terms=scramble/);
+  await expect(page.getByLabel("Aktiva filter")).toContainText("Scramble");
+  await expect(page.getByRole("link", { name: "Gotland Open" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Scramble" }).first().click();
+  await expect(page).not.toHaveURL(/terms=scramble/);
 });

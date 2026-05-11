@@ -1,6 +1,11 @@
 import sanitizeHtml from "sanitize-html";
 import { z } from "zod";
 
+import {
+  competitionMatchesLocalTerms,
+  localSearchTermsFromFilters,
+  searchPhraseFromFilters,
+} from "../search-terms";
 import { defaultDateRange } from "./date";
 import type {
   CompetitionDetail,
@@ -15,6 +20,7 @@ import type {
 const MIN_GOLF_BASE_URL = "https://mingolf.golf.se/tavling";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MIN_GOLF_PAGE_SIZE = 25;
+const LOCAL_FILTER_MAX_UPSTREAM_PAGES = 4;
 
 const DEFAULT_OTHER_OPTIONS: Record<OtherOptionGroup, string[]> = {
   gameType: ["1", "2"],
@@ -239,7 +245,7 @@ export function buildMinGolfSearchPayload(
   const hasCustomClubOrDistrict = clubIds.length > 0 || Boolean(filters.districtId);
 
   return {
-    searchPhrase: filters.query?.trim() ?? "",
+    searchPhrase: searchPhraseFromFilters(filters),
     dates: {
       from: filters.from || defaults.from,
       to: filters.to || defaults.to,
@@ -472,13 +478,73 @@ export async function getSearchOverview() {
 }
 
 export async function searchCompetitions(filters: SearchFilters) {
-  const payload = buildMinGolfSearchPayload(filters);
-  const raw = await fetchMinGolfJson<unknown>("/Competitions/Search", {
-    method: "POST",
-    body: JSON.stringify(payload),
-    next: { revalidate: 120 },
-  });
-  return normalizeSearchResults(raw, payload.pagination);
+  const localTerms = localSearchTermsFromFilters(filters);
+
+  if (localTerms.length === 0) {
+    const payload = buildMinGolfSearchPayload(filters);
+    const raw = await fetchMinGolfJson<unknown>("/Competitions/Search", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      next: { revalidate: 120 },
+    });
+    return normalizeSearchResults(raw, payload.pagination);
+  }
+
+  const requestedPage = Math.max(1, filters.page ?? 1);
+  const targetCount = requestedPage * MIN_GOLF_PAGE_SIZE;
+  const matches: CompetitionSummary[] = [];
+  let upstreamPage = 1;
+  let upstreamHasMore = true;
+
+  while (
+    matches.length < targetCount &&
+    upstreamHasMore &&
+    upstreamPage <= requestedPage + LOCAL_FILTER_MAX_UPSTREAM_PAGES - 1
+  ) {
+    const payload = buildMinGolfSearchPayload({ ...filters, page: upstreamPage });
+    const raw = await fetchMinGolfJson<unknown>("/Competitions/Search", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      next: { revalidate: 120 },
+    });
+    const result = normalizeSearchResults(raw, upstreamPage);
+    upstreamHasMore = result.hasMore;
+
+    const pageMatches = await Promise.all(
+      result.competitions.map(async (competition) => {
+        if (competitionMatchesLocalTerms(competition, localTerms)) {
+          return competition;
+        }
+
+        try {
+          const detail = await getCompetitionDetail(competition.id);
+          return competitionMatchesLocalTerms(detail, localTerms)
+            ? competition
+            : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    matches.push(
+      ...pageMatches.filter(
+        (competition): competition is CompetitionSummary => Boolean(competition),
+      ),
+    );
+    upstreamPage += 1;
+  }
+
+  const start = (requestedPage - 1) * MIN_GOLF_PAGE_SIZE;
+  const competitions = matches.slice(start, start + MIN_GOLF_PAGE_SIZE);
+
+  return {
+    competitions,
+    totalCount: matches.length,
+    page: requestedPage,
+    pageSize: MIN_GOLF_PAGE_SIZE,
+    hasMore: matches.length > start + competitions.length || upstreamHasMore,
+  };
 }
 
 export async function getCompetitionDetail(id: string) {

@@ -2,9 +2,11 @@ import { X } from "lucide-react";
 
 import type { SearchFilters, SearchOverview } from "@/lib/min-golf/types";
 import { formatDateLabel } from "@/lib/min-golf/date";
+import { labelForSearchTerm } from "@/lib/search-terms";
 
 type FilterKey =
   | "query"
+  | "terms"
   | "from"
   | "to"
   | "onlyWeekend"
@@ -48,11 +50,18 @@ export function ActiveFilterChips({
 }: {
   filters: SearchFilters;
   overview?: SearchOverview;
-  onRemove: (key: FilterKey) => void;
+  onRemove: (key: FilterKey, value?: string) => void;
 }) {
-  const chips: Array<{ key: FilterKey; label: string }> = [];
+  const chips: Array<{ key: FilterKey; label: string; value?: string }> = [];
 
   if (filters.query) chips.push({ key: "query", label: filters.query });
+  filters.terms?.forEach((term) => {
+    chips.push({
+      key: "terms",
+      label: labelForSearchTerm(term),
+      value: term,
+    });
+  });
   if (filters.from)
     chips.push({ key: "from", label: `Från ${formatDateLabel(filters.from)}` });
   if (filters.to)
@@ -90,7 +99,7 @@ export function ActiveFilterChips({
         <button
           key={`${chip.key}-${chip.label}`}
           type="button"
-          onClick={() => onRemove(chip.key)}
+          onClick={() => onRemove(chip.key, chip.value)}
           className="inline-flex max-w-full items-center gap-2 rounded-full bg-surface-container px-3 py-2 text-sm font-bold text-on-surface-variant transition hover:bg-surface-container-high focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <span className="truncate">{chip.label}</span>
