@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as getOverviewRoute } from "@/app/api/competitions/overview/route";
 import { POST as postSearchRoute } from "@/app/api/competitions/search/route";
 import {
+  __resetSearchResultCacheForTests,
   buildMinGolfSearchPayload,
   normalizeCompetitionDetail,
   normalizeSearchOverview,
@@ -136,6 +137,7 @@ describe("Min Golf payloads and normalizers", () => {
   });
 
   afterEach(() => {
+    __resetSearchResultCacheForTests();
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -158,11 +160,9 @@ describe("Min Golf payloads and normalizers", () => {
       "1",
       "2",
     ]);
-    expect(payload.otherOptions.gameComposition.map((option) => option.id)).toEqual([
-      "1",
-      "2",
-      "3",
-    ]);
+    expect(
+      payload.otherOptions.gameComposition.map((option) => option.id),
+    ).toEqual(["1", "2", "3"]);
     expect(payload.pagination).toBe(1);
   });
 
@@ -246,7 +246,12 @@ describe("Min Golf payloads and normalizers", () => {
       entryCount: 7,
       gender: "Mix",
       teamSize: "2-4 spelare",
-      restrictions: ["HCP: +8,0 - 54,0", "Ålder: 18 - 99", "Tee: Gul", "Tee: Röd"],
+      restrictions: [
+        "HCP: +8,0 - 54,0",
+        "Ålder: 18 - 99",
+        "Tee: Gul",
+        "Tee: Röd",
+      ],
     });
     expect(detail.openFor).toBe("Alla");
     expect(detail.greenFee).toBe("150 kr");
@@ -284,7 +289,9 @@ describe("Min Golf payloads and normalizers", () => {
         body: expect.any(String),
       }),
     );
-    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as {
+    const requestBody = JSON.parse(
+      fetchMock.mock.calls[0][1].body as string,
+    ) as {
       otherOptions: Record<string, unknown[]>;
     };
     expect(requestBody.otherOptions.gameComposition).toHaveLength(3);
@@ -317,16 +324,58 @@ describe("Min Golf payloads and normalizers", () => {
     expect(result.competitions[0].name).toBe("Gotland Open");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("reuses identical search filters for a short period", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(searchFixture));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const filters = {
+      query: "gotland",
+      from: "2026-05-11",
+      to: "2026-06-10",
+      page: 1,
+    };
+
+    const first = await searchCompetitions(filters);
+    const second = await searchCompetitions({ ...filters });
+
+    expect(second).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("expires short-lived search cache entries", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(searchFixture)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const filters = {
+      query: "gotland",
+      from: "2026-05-11",
+      to: "2026-06-10",
+      page: 1,
+    };
+
+    await searchCompetitions(filters);
+    vi.advanceTimersByTime(21_000);
+    await searchCompetitions(filters);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("competition API routes", () => {
   afterEach(() => {
+    __resetSearchResultCacheForTests();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
   it("returns overview data with cache headers", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(overviewFixture)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(overviewFixture)),
+    );
 
     const response = await getOverviewRoute();
     const body = await response.json();
@@ -348,7 +397,10 @@ describe("competition API routes", () => {
   });
 
   it("proxies search success", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(searchFixture)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(searchFixture)),
+    );
 
     const response = await postSearchRoute(
       new Request("http://localhost/api/competitions/search", {
@@ -363,7 +415,10 @@ describe("competition API routes", () => {
   });
 
   it("propagates upstream detail errors", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ error: true }, 404)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ error: true }, 404)),
+    );
 
     const response = await getDetailRoute(
       new Request("http://localhost/api/competitions/404"),
@@ -372,5 +427,4 @@ describe("competition API routes", () => {
 
     expect(response.status).toBe(404);
   });
-}
-);
+});

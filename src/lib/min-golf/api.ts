@@ -21,6 +21,8 @@ const MIN_GOLF_BASE_URL = "https://mingolf.golf.se/tavling";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MIN_GOLF_PAGE_SIZE = 25;
 const LOCAL_FILTER_MAX_UPSTREAM_PAGES = 4;
+const SEARCH_RESULT_CACHE_TTL_MS = 20_000;
+const SEARCH_RESULT_CACHE_MAX_ENTRIES = 120;
 
 const DEFAULT_OTHER_OPTIONS: Record<OtherOptionGroup, string[]> = {
   gameType: ["1", "2"],
@@ -28,6 +30,13 @@ const DEFAULT_OTHER_OPTIONS: Record<OtherOptionGroup, string[]> = {
   gender: ["0", "1", "3"],
   openFor: ["1", "2", "3"],
 };
+
+type SearchCacheEntry = {
+  expiresAt: number;
+  value: CompetitionSearchResult;
+};
+
+const searchResultCache = new Map<string, SearchCacheEntry>();
 
 const stringId = z.union([z.string(), z.number()]).transform(String);
 
@@ -185,6 +194,95 @@ function optionGroup(group: OtherOptionGroup, selected?: string[]) {
 function normalizedPage(value?: number) {
   if (!Number.isFinite(value)) return 1;
   return Math.max(1, value ?? 1);
+}
+
+function normalizeTerm(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function uniqueSorted(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]),
+  ).sort((a, b) => a.localeCompare(b));
+}
+
+function cloneSearchResult(
+  result: CompetitionSearchResult,
+): CompetitionSearchResult {
+  return {
+    ...result,
+    competitions: result.competitions.map((competition) => ({
+      ...competition,
+    })),
+  };
+}
+
+function normalizeFiltersForSearchCache(filters: SearchFilters): SearchFilters {
+  const defaults = defaultDateRange();
+  return {
+    query: filters.query?.trim() || undefined,
+    terms: uniqueSorted((filters.terms ?? []).map(normalizeTerm)),
+    from: filters.from || defaults.from,
+    to: filters.to || defaults.to,
+    onlyWeekend: Boolean(filters.onlyWeekend),
+    clubIds: uniqueSorted(filters.clubIds ?? []),
+    districtId: filters.districtId || null,
+    classification: filters.classification || null,
+    gameType: uniqueSorted(filters.gameType ?? []),
+    gameComposition: uniqueSorted(filters.gameComposition ?? []),
+    gender: uniqueSorted(filters.gender ?? []),
+    openFor: uniqueSorted(filters.openFor ?? []),
+    page: normalizedPage(filters.page),
+  };
+}
+
+function searchCacheKey(filters: SearchFilters, localTerms: string[]) {
+  const normalized = normalizeFiltersForSearchCache(filters);
+  const payload = buildMinGolfSearchPayload(normalized);
+
+  return JSON.stringify({
+    payload,
+    localTerms: uniqueSorted(localTerms),
+  });
+}
+
+function pruneSearchCache(now: number) {
+  for (const [key, entry] of searchResultCache.entries()) {
+    if (entry.expiresAt <= now) searchResultCache.delete(key);
+  }
+
+  while (searchResultCache.size > SEARCH_RESULT_CACHE_MAX_ENTRIES) {
+    const oldestKey = searchResultCache.keys().next().value;
+    if (!oldestKey) break;
+    searchResultCache.delete(oldestKey);
+  }
+}
+
+function getCachedSearchResult(key: string) {
+  const now = Date.now();
+  pruneSearchCache(now);
+
+  const entry = searchResultCache.get(key);
+  if (!entry || entry.expiresAt <= now) {
+    if (entry) searchResultCache.delete(key);
+    return undefined;
+  }
+
+  return cloneSearchResult(entry.value);
+}
+
+function setCachedSearchResult(key: string, value: CompetitionSearchResult) {
+  const now = Date.now();
+  pruneSearchCache(now);
+
+  searchResultCache.set(key, {
+    expiresAt: now + SEARCH_RESULT_CACHE_TTL_MS,
+    value: cloneSearchResult(value),
+  });
+}
+
+export function __resetSearchResultCacheForTests() {
+  searchResultCache.clear();
 }
 
 function extractFirstRoundDate(classes: unknown[]) {
@@ -488,6 +586,12 @@ export async function getSearchOverview() {
 
 export async function searchCompetitions(filters: SearchFilters) {
   const localTerms = localSearchTermsFromFilters(filters);
+  const cacheKey = searchCacheKey(filters, localTerms);
+  const cachedResult = getCachedSearchResult(cacheKey);
+
+  if (cachedResult) {
+    return cachedResult;
+  }
 
   if (localTerms.length === 0) {
     const payload = buildMinGolfSearchPayload(filters);
@@ -496,7 +600,9 @@ export async function searchCompetitions(filters: SearchFilters) {
       body: JSON.stringify(payload),
       cache: "no-store",
     });
-    return normalizeSearchResults(raw, payload.pagination);
+    const result = normalizeSearchResults(raw, payload.pagination);
+    setCachedSearchResult(cacheKey, result);
+    return result;
   }
 
   const requestedPage = Math.max(1, filters.page ?? 1);
@@ -517,7 +623,7 @@ export async function searchCompetitions(filters: SearchFilters) {
     const raw = await fetchMinGolfJson<unknown>("/Competitions/Search", {
       method: "POST",
       body: JSON.stringify(payload),
-      next: { revalidate: 120 },
+      cache: "no-store",
     });
     const result = normalizeSearchResults(raw, upstreamPage);
     upstreamHasMore = result.hasMore;
@@ -550,13 +656,16 @@ export async function searchCompetitions(filters: SearchFilters) {
   const start = (requestedPage - 1) * MIN_GOLF_PAGE_SIZE;
   const competitions = matches.slice(start, start + MIN_GOLF_PAGE_SIZE);
 
-  return {
+  const result = {
     competitions,
     totalCount: matches.length,
     page: requestedPage,
     pageSize: MIN_GOLF_PAGE_SIZE,
     hasMore: matches.length > start + competitions.length || upstreamHasMore,
   };
+
+  setCachedSearchResult(cacheKey, result);
+  return result;
 }
 
 export async function getCompetitionDetail(id: string) {

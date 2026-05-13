@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   History,
   Medal,
@@ -158,8 +158,17 @@ export function HomePage() {
   const [preferredDistrictId, setPreferredDistrictId] = useState<string>();
   const draftFilters =
     draftState.key === searchKey ? draftState.filters : activeFilters;
+  const draftFiltersRef = useRef(draftFilters);
+
+  useEffect(() => {
+    draftFiltersRef.current = draftFilters;
+  }, [draftFilters]);
+
   const setDraftFilters = useCallback(
-    (filters: SearchFilters) => setDraftState({ key: searchKey, filters }),
+    (filters: SearchFilters) => {
+      draftFiltersRef.current = filters;
+      setDraftState({ key: searchKey, filters });
+    },
     [searchKey],
   );
 
@@ -279,10 +288,11 @@ export function HomePage() {
   }, []);
 
   const submitSearch = useCallback(
-    (filters: SearchFilters) => {
+    (filters?: SearchFilters) => {
+      const nextFilters = filters ?? draftFiltersRef.current;
       updateUrl(
         rememberPreferredDistrict(
-          withPreferredDistrict(submitQueryAsTerms(filters)),
+          withPreferredDistrict(submitQueryAsTerms(nextFilters)),
         ),
       );
     },
@@ -452,7 +462,7 @@ export function HomePage() {
               className="gf-home-search"
               onSubmit={(event) => {
                 event.preventDefault();
-                submitSearch(draftFilters);
+                submitSearch();
               }}
             >
               <label className="sr-only" htmlFor="competition-search">
@@ -812,7 +822,7 @@ export function HomePage() {
         overview={overview}
         onApply={() => {
           setIsFilterOpen(false);
-          submitSearch(draftFilters);
+          submitSearch();
         }}
         onChange={setDraftFilters}
         onClose={() => setIsFilterOpen(false)}
