@@ -87,7 +87,7 @@ const rawCompetitionDetailSchema = z.object({
       competitionLogo: z.string().optional(),
     })
     .default({}),
-      information: z
+  information: z
     .object({
       gameType: z.string().optional(),
       openFor: z.string().optional(),
@@ -194,7 +194,9 @@ function extractFirstRoundDate(classes: unknown[]) {
 
   for (const item of classes) {
     const parsed = schema.safeParse(item);
-    const firstRoundDate = parsed.success ? parsed.data.rounds?.[0]?.date : undefined;
+    const firstRoundDate = parsed.success
+      ? parsed.data.rounds?.[0]?.date
+      : undefined;
     if (firstRoundDate) return firstRoundDate;
   }
 
@@ -232,7 +234,8 @@ function teamSizeLabel(minTeamSize?: number, maxTeamSize?: number) {
   if (minTeamSize && maxTeamSize && minTeamSize === maxTeamSize) {
     return `${minTeamSize} spelare`;
   }
-  if (minTeamSize && maxTeamSize) return `${minTeamSize}-${maxTeamSize} spelare`;
+  if (minTeamSize && maxTeamSize)
+    return `${minTeamSize}-${maxTeamSize} spelare`;
   if (minTeamSize) return `Minst ${minTeamSize} spelare`;
   return `Max ${maxTeamSize} spelare`;
 }
@@ -242,7 +245,8 @@ export function buildMinGolfSearchPayload(
 ): MinGolfSearchPayload {
   const defaults = defaultDateRange();
   const clubIds = filters.clubIds?.filter(Boolean) ?? [];
-  const hasCustomClubOrDistrict = clubIds.length > 0 || Boolean(filters.districtId);
+  const hasCustomClubOrDistrict =
+    clubIds.length > 0 || Boolean(filters.districtId);
 
   return {
     searchPhrase: searchPhraseFromFilters(filters),
@@ -290,7 +294,9 @@ export function normalizeSearchOverview(input: unknown): SearchOverview {
   };
 }
 
-function normalizeCompetitionSummary(input: unknown): CompetitionSummary | null {
+function normalizeCompetitionSummary(
+  input: unknown,
+): CompetitionSummary | null {
   const row = z
     .object({
       competition: z.object({
@@ -353,12 +359,15 @@ export function normalizeCompetitionDetail(
   const parsed = rawCompetitionDetailSchema.parse(input);
   const detail = parsed.details;
   const info = parsed.information;
-  const gameFormat = [info.roundFormat, info.gameType].filter(Boolean).join(", ");
+  const gameFormat = [info.roundFormat, info.gameType]
+    .filter(Boolean)
+    .join(", ");
 
   return {
     id,
     name: detail.competitionName ?? "Namnlös tävling",
-    startDate: extractFirstRoundDate(parsed.classes) ?? detail.competitionDate ?? "",
+    startDate:
+      extractFirstRoundDate(parsed.classes) ?? detail.competitionDate ?? "",
     competitionDate: detail.competitionDate,
     clubName: detail.clubName ?? "Okänd klubb",
     courseName: detail.courseName,
@@ -485,7 +494,7 @@ export async function searchCompetitions(filters: SearchFilters) {
     const raw = await fetchMinGolfJson<unknown>("/Competitions/Search", {
       method: "POST",
       body: JSON.stringify(payload),
-      next: { revalidate: 120 },
+      cache: "no-store",
     });
     return normalizeSearchResults(raw, payload.pagination);
   }
@@ -501,7 +510,10 @@ export async function searchCompetitions(filters: SearchFilters) {
     upstreamHasMore &&
     upstreamPage <= requestedPage + LOCAL_FILTER_MAX_UPSTREAM_PAGES - 1
   ) {
-    const payload = buildMinGolfSearchPayload({ ...filters, page: upstreamPage });
+    const payload = buildMinGolfSearchPayload({
+      ...filters,
+      page: upstreamPage,
+    });
     const raw = await fetchMinGolfJson<unknown>("/Competitions/Search", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -528,8 +540,8 @@ export async function searchCompetitions(filters: SearchFilters) {
     );
 
     matches.push(
-      ...pageMatches.filter(
-        (competition): competition is CompetitionSummary => Boolean(competition),
+      ...pageMatches.filter((competition): competition is CompetitionSummary =>
+        Boolean(competition),
       ),
     );
     upstreamPage += 1;
