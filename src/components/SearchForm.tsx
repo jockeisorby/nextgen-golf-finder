@@ -13,14 +13,21 @@ export function SearchForm({
   isLoading: boolean;
   onChange: (filters: SearchFilters) => void;
   onOpenFilters: () => void;
-  onSubmit: () => void;
+  onSubmit: (filters: SearchFilters) => void;
 }) {
   return (
     <form
       className="gf-search-panel"
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit();
+        const formData = new FormData(event.currentTarget);
+        onSubmit({
+          ...filters,
+          query: String(formData.get("query") ?? "").trim() || undefined,
+          from: String(formData.get("from") ?? "") || undefined,
+          to: String(formData.get("to") ?? "") || undefined,
+          page: 1,
+        });
       }}
     >
       <div className="gf-search-form-grid">
@@ -28,6 +35,7 @@ export function SearchForm({
           <span className="gf-field-label">Sökord</span>
           <input
             id="competition-search"
+            name="query"
             value={filters.query ?? ""}
             onChange={(event) =>
               onChange({ ...filters, query: event.target.value, page: 1 })
@@ -40,6 +48,7 @@ export function SearchForm({
           <span className="gf-field-label">Från</span>
           <input
             type="date"
+            name="from"
             value={filters.from ?? ""}
             onChange={(event) =>
               onChange({ ...filters, from: event.target.value, page: 1 })
@@ -51,6 +60,7 @@ export function SearchForm({
           <span className="gf-field-label">Till</span>
           <input
             type="date"
+            name="to"
             value={filters.to ?? ""}
             onChange={(event) =>
               onChange({ ...filters, to: event.target.value, page: 1 })

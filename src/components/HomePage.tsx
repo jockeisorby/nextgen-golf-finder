@@ -43,7 +43,9 @@ const PREFERRED_DISTRICT_STORAGE_KEY = "tavla-golf:preferred-district";
 
 function readPreferredDistrictId() {
   if (typeof window === "undefined") return undefined;
-  return window.localStorage.getItem(PREFERRED_DISTRICT_STORAGE_KEY) ?? undefined;
+  return (
+    window.localStorage.getItem(PREFERRED_DISTRICT_STORAGE_KEY) ?? undefined
+  );
 }
 
 function writePreferredDistrictId(id: string) {
@@ -112,17 +114,21 @@ function filtersToParams(filters: SearchFilters) {
   if (normalized.from) params.set("from", normalized.from);
   if (normalized.to) params.set("to", normalized.to);
   if (normalized.onlyWeekend) params.set("weekend", "1");
-  if (normalized.clubIds?.length) params.set("club", normalized.clubIds.join(","));
+  if (normalized.clubIds?.length)
+    params.set("club", normalized.clubIds.join(","));
   if (normalized.districtId) params.set("district", normalized.districtId);
   if (normalized.classification) {
     params.set("classification", normalized.classification);
   }
-  if (normalized.gameType?.length) params.set("gameType", normalized.gameType.join(","));
+  if (normalized.gameType?.length)
+    params.set("gameType", normalized.gameType.join(","));
   if (normalized.gameComposition?.length) {
     params.set("gameComposition", normalized.gameComposition.join(","));
   }
-  if (normalized.gender?.length) params.set("gender", normalized.gender.join(","));
-  if (normalized.openFor?.length) params.set("openFor", normalized.openFor.join(","));
+  if (normalized.gender?.length)
+    params.set("gender", normalized.gender.join(","));
+  if (normalized.openFor?.length)
+    params.set("openFor", normalized.openFor.join(","));
   if ((normalized.page ?? 1) > 1) params.set("page", String(normalized.page));
   return params;
 }
@@ -162,7 +168,8 @@ export function HomePage() {
 
     fetch("/api/competitions/overview")
       .then(async (response) => {
-        if (!response.ok) throw new Error("Kunde inte läsa filter från Min Golf.");
+        if (!response.ok)
+          throw new Error("Kunde inte läsa filter från Min Golf.");
         return (await response.json()) as SearchOverview;
       })
       .then((data) => {
@@ -191,9 +198,9 @@ export function HomePage() {
     })
       .then(async (response) => {
         if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const payload = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(payload?.error ?? "Sökningen misslyckades.");
         }
         return (await response.json()) as CompetitionSearchResult;
@@ -254,7 +261,8 @@ export function HomePage() {
       const hasLocationFilter = Boolean(
         filters.districtId || filters.clubIds?.length,
       );
-      const defaultDistrictId = preferredDistrictId ?? readPreferredDistrictId();
+      const defaultDistrictId =
+        preferredDistrictId ?? readPreferredDistrictId();
       if (hasLocationFilter || !defaultDistrictId) return filters;
       return { ...filters, districtId: defaultDistrictId };
     },
@@ -273,7 +281,9 @@ export function HomePage() {
   const submitSearch = useCallback(
     (filters: SearchFilters) => {
       updateUrl(
-        rememberPreferredDistrict(withPreferredDistrict(submitQueryAsTerms(filters))),
+        rememberPreferredDistrict(
+          withPreferredDistrict(submitQueryAsTerms(filters)),
+        ),
       );
     },
     [rememberPreferredDistrict, updateUrl, withPreferredDistrict],
@@ -330,9 +340,7 @@ export function HomePage() {
         );
 
         if (!nearest) {
-          setLocationMessage(
-            "Kunde inte matcha platsen mot ett golfdistrikt.",
-          );
+          setLocationMessage("Kunde inte matcha platsen mot ett golfdistrikt.");
           return;
         }
 
@@ -450,7 +458,10 @@ export function HomePage() {
               <label className="sr-only" htmlFor="competition-search">
                 Sökord
               </label>
-              <MessageCircle className="gf-home-search-icon" aria-hidden="true" />
+              <MessageCircle
+                className="gf-home-search-icon"
+                aria-hidden="true"
+              />
               <input
                 id="competition-search"
                 value={draftFilters.query ?? ""}
@@ -563,7 +574,10 @@ export function HomePage() {
               <article className="gf-home-mini-card">
                 <div>
                   <div className="gf-home-mini-header">
-                    <Users className="size-8 text-secondary" aria-hidden="true" />
+                    <Users
+                      className="size-8 text-secondary"
+                      aria-hidden="true"
+                    />
                     <span>48 öppna starter</span>
                   </div>
                   <h3 className="gf-home-mini-title">Poängbogey</h3>
@@ -602,7 +616,10 @@ export function HomePage() {
             </div>
           </section>
 
-          <section className="gf-home-trending" aria-labelledby="trending-title">
+          <section
+            className="gf-home-trending"
+            aria-labelledby="trending-title"
+          >
             <h2 id="trending-title" className="gf-home-section-title">
               Populärt just nu
             </h2>
@@ -635,7 +652,7 @@ export function HomePage() {
             isLoading={isLoading}
             onChange={setDraftFilters}
             onOpenFilters={() => setIsFilterOpen(true)}
-            onSubmit={() => submitSearch(draftFilters)}
+            onSubmit={submitSearch}
           />
 
           <section
@@ -715,7 +732,9 @@ export function HomePage() {
               }}
             />
             {overviewError ? (
-              <p className="text-sm font-semibold text-error">{overviewError}</p>
+              <p className="text-sm font-semibold text-error">
+                {overviewError}
+              </p>
             ) : null}
             {locationMessage ? (
               <p className="gf-location-message">{locationMessage}</p>
