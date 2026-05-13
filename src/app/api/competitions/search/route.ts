@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const result = await searchCompetitions(filters);
     return NextResponse.json(result, {
       headers: {
-        "Cache-Control": "s-maxage=120, stale-while-revalidate=60",
+        "Cache-Control": "no-store",
       },
     });
   } catch (error) {
